@@ -383,3 +383,10 @@ footer p { margin: 4px 0; }
 }
 .method-table thead th { text-align: right; width: auto; }
 .method-table thead th:first-child { text-align: left; }
+
+/* onglets : libellés courts dès que la barre du haut manque de place */
+.tabs button { white-space: nowrap; }
+@media (max-width: 1000px) {
+  .tabs .long { display: none; }
+  .tabs .short { display: inline; }
+}
