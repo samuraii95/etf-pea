@@ -32,6 +32,9 @@ HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 BOURSO_MAX_DAYS = 7300  # Boursorama ne renvoie pas plus de 20 ans en une fois
+# Boursorama n'accepte que certaines durées (30, 90, 180, 365, 730, 1825, 3650, 7300 jours) :
+# avec une autre valeur (ex. 45), il renvoie des points sans date exploitable.
+BOURSO_UPDATE_DAYS = 90
 
 
 # ---------------------------------------------------------------- Boursorama
@@ -48,8 +51,10 @@ def bourso_ticks(symbol, length, period):
 
 
 def bourso_daily(symbol, full):
-    ticks = bourso_ticks(symbol, BOURSO_MAX_DAYS if full else 45, 0)
-    # "d" = nombre de jours depuis le 01/01/1970
+    ticks = bourso_ticks(symbol, BOURSO_MAX_DAYS if full else BOURSO_UPDATE_DAYS, 0)
+    # "d" = nombre de jours depuis le 01/01/1970 : on vérifie que ce sont bien des dates plausibles
+    if not all(10000 < t["d"] < 40000 for t in ticks):
+        raise ValueError("dates incohérentes dans la réponse")
     return {(EPOCH + dt.timedelta(days=t["d"])).isoformat(): t["c"] for t in ticks if t["c"] and t["c"] > 0}
 
 
