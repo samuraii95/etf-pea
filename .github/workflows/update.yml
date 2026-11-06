@@ -1,0 +1,75 @@
+name: Mise à jour des cours
+
+on:
+  schedule:
+    # Heures en UTC : toutes les 30 min de l'ouverture de Paris (9h) à la clôture de Wall Street (22h à Paris)
+    - cron: "7,37 7-21 * * 1-5"
+    # Le week-end : quelques passages pour les actualités
+    - cron: "15 8,14,20 * * 0,6"
+  workflow_dispatch: # bouton "Run workflow" dans l'onglet Actions
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: maj-cours
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Télécharger les cours des ETF
+        run: python scripts/update_data.py
+
+      - name: Market Thermometer (indicateurs et score)
+        run: python scripts/update_market.py
+        continue-on-error: true
+
+      - name: Market News
+        run: python scripts/update_news.py
+        continue-on-error: true
+        env:
+          # Secret facultatif : sans lui, les actualités sont affichées sans résumé ni impact estimé
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
+
+      - name: Enregistrer les données dans le dépôt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "Pas de nouvelle donnée"
+          else
+            git commit -m "Données du $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git pull --rebase --autostash
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

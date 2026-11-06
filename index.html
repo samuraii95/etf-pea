@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mes ETF PEA · suivi des cours</title>
+  <meta name="description" content="Courbes, statistiques et classements de mes ETF (PEA), mis à jour automatiquement.">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230ca30c'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js" defer></script>
+  <script type="module" src="assets/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span>Mes ETF <b>PEA</b></span>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="suivi" aria-selected="true">Suivi</button>
+      <button role="tab" data-tab="comparer" aria-selected="false"><span class="long">Comparer &amp; Top 10</span><span class="short">Top 10</span></button>
+      <button role="tab" data-tab="thermo" aria-selected="false"><span class="long">Market Thermometer</span><span class="short">Thermomètre</span></button>
+    </nav>
+    <div class="topbar-right">
+      <span id="updated" class="muted small"></span>
+      <button id="theme-btn" class="icon-btn" title="Changer de thème" aria-label="Changer de thème">◐</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ======================= ONGLET SUIVI ======================= -->
+    <section id="tab-suivi" class="tab-panel">
+      <aside class="etf-list-panel">
+        <div class="list-tools">
+          <label class="switch"><input type="checkbox" id="pea-only"><span>PEA uniquement</span></label>
+          <select id="sort-select" aria-label="Trier la liste">
+            <option value="day">Tri : perf du jour</option>
+            <option value="1A">Tri : perf 1 an</option>
+            <option value="name">Tri : nom</option>
+            <option value="config">Tri : ma liste</option>
+          </select>
+        </div>
+        <ul id="etf-list" class="etf-list"></ul>
+      </aside>
+
+      <div class="detail">
+        <div class="detail-head">
+          <div class="ids">
+            <span id="d-ticker" class="ticker"></span>
+            <span class="sep">·</span>
+            <span id="d-isin" class="muted"></span>
+            <span id="d-pea" class="badge"></span>
+          </div>
+          <h1 id="d-name"></h1>
+          <p id="d-fullname" class="muted small"></p>
+          <div class="price-row">
+            <span id="d-price" class="price"></span>
+            <span id="d-change" class="change"></span>
+          </div>
+          <p id="d-quote-time" class="muted small"></p>
+        </div>
+
+        <div class="card chart-card">
+          <div class="chart-toolbar">
+            <div class="seg" id="range-buttons" role="group" aria-label="Période"></div>
+            <div class="chart-opts">
+              <label class="switch small" title="Échelle logarithmique (utile sur les longues périodes)"><input type="checkbox" id="log-scale"><span>Log</span></label>
+              <button id="reset-zoom" class="ghost-btn small">Réinitialiser</button>
+            </div>
+          </div>
+          <div class="window-stats" id="window-stats"></div>
+          <div id="main-chart" class="chart main"></div>
+          <p class="hint muted small">Astuce : fais glisser les poignées du curseur sous le graphique pour choisir ta fenêtre. Sur ordinateur : Ctrl + molette pour zoomer, cliquer-glisser pour te déplacer.</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="card">
+            <h2>Court terme</h2>
+            <div class="tiles" id="short-stats"></div>
+          </div>
+          <div class="card">
+            <h2>Long terme</h2>
+            <div class="tiles" id="long-stats"></div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="card">
+            <h2>Performances annuelles</h2>
+            <div id="year-chart" class="chart small-chart"></div>
+            <p class="muted small" id="year-note"></p>
+          </div>
+          <div class="card">
+            <h2>Fiche du fonds</h2>
+            <table class="kv" id="fund-sheet"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= ONGLET COMPARER ======================= -->
+    <section id="tab-comparer" class="tab-panel" hidden>
+      <div class="cmp-filters">
+        <div class="seg" id="cmp-range-buttons" role="group" aria-label="Période de comparaison"></div>
+        <label class="switch"><input type="checkbox" id="cmp-pea-only"><span>PEA uniquement</span></label>
+        <label class="switch"><input type="checkbox" id="cmp-show-others" checked><span>Autres ETF en gris</span></label>
+      </div>
+
+      <div class="card chart-card">
+        <div class="cmp-head">
+          <h2>Comparaison des courbes</h2>
+          <p class="muted small">Toutes les courbes partent de 0 % au début de la fenêtre visible. Clique sur un ETF pour l'afficher en couleur (8 au maximum).</p>
+        </div>
+        <div id="cmp-chips" class="chips"></div>
+        <div id="cmp-chart" class="chart cmp"></div>
+      </div>
+
+      <h2 class="section-title">Top 10</h2>
+      <div class="top-grid" id="top-grid"></div>
+
+      <div class="card">
+        <div class="table-head">
+          <h2>Tableau complet</h2>
+          <p class="muted small">Clique sur un en-tête pour trier. « — » = historique trop court pour la période.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="perf-table" id="perf-table"></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================= ONGLET MARKET THERMOMETER ======================= -->
+    <section id="tab-thermo" class="tab-panel" hidden>
+      <div class="thermo-head">
+        <div>
+          <h1>Market Thermometer</h1>
+          <p class="muted small">Conditions des marchés américains pour le Nasdaq 100 et le S&amp;P 500. Outil d'analyse du contexte, pas une recommandation d'achat ou de vente.</p>
+        </div>
+        <p id="th-updated" class="muted small th-updated"></p>
+      </div>
+
+      <div id="th-alert"></div>
+      <div class="gauges" id="th-gauges"></div>
+
+      <h2 class="section-title">Les 4 indicateurs</h2>
+      <div class="ind-grid" id="th-indicators"></div>
+
+      <details class="card method">
+        <summary><h2>Méthode de calcul du score</h2></summary>
+        <div id="th-method"></div>
+      </details>
+
+      <h2 class="section-title">Market News</h2>
+      <div class="news-tools">
+        <div class="seg" id="news-filters" role="group" aria-label="Filtrer les actualités"></div>
+      </div>
+      <p id="news-status" class="muted small news-status"></p>
+      <ul class="news-list" id="news-list"></ul>
+    </section>
+  </main>
+
+  <footer>
+    <p><b>Sources :</b> Boursorama (cours Euronext Paris) et Yahoo Finance (cotations Xetra, secours). Cours de clôture quotidiens, données intraday différées, mises à jour automatiquement toutes les 30 min en séance.</p>
+    <p><b>Market Thermometer :</b> NY Fed, U.S. Treasury, CBOE, contrats à terme Fed Funds (CBOT) et Brent (ICE), indices via Yahoo Finance (cours différés). Actualités : flux RSS publics de la Fed, du BEA, de CNBC, MarketWatch et Investing.com.</p>
+    <p>L'éligibilité PEA indiquée a été vérifiée en novembre 2026 (justETF, Boursorama) ; elle peut évoluer, vérifie-la auprès de ton courtier. Les performances passées ne préjugent pas des performances futures. Les classements ne sont pas un conseil en investissement.</p>
+    <p id="data-status" class="muted small"></p>
+  </footer>
+</body>
+</html>
