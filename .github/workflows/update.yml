@@ -1,75 +1,76 @@
-name: Mise à jour des cours
+name: Mise à jour des données
+
+# Les déclenchements planifiés (cron) de GitHub sont très irréguliers : beaucoup sont retardés de
+# plusieurs heures ou jamais lancés. Ce robot tourne donc en boucle : une fois démarré, il met les
+# données à jour toutes les 15 minutes en séance (toutes les heures sinon) et se relance lui-même
+# avant la limite de 6 heures d'une tâche GitHub. Le cron ne sert plus que de filet de sécurité.
+#
+# Les données sont publiées sur la branche « data » (un seul commit, remplacé à chaque passage),
+# que le site lit directement : la branche main ne contient que le code.
 
 on:
   schedule:
-    # Heures en UTC : toutes les 30 min de l'ouverture de Paris (9h) à la clôture de Wall Street (22h à Paris)
-    - cron: "7,37 7-21 * * 1-5"
-    # Le week-end : quelques passages pour les actualités
-    - cron: "15 8,14,20 * * 0,6"
-  workflow_dispatch: # bouton "Run workflow" dans l'onglet Actions
+    - cron: "11,41 * * * *" # filet de sécurité : relance la boucle si elle s'est arrêtée
+  workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - ".github/workflows/update.yml"
+      - "scripts/**"
+      - "requirements.txt"
+      - "data/etfs.json"
+      - "data/fomc.json"
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
-
-concurrency:
-  group: maj-cours
-  cancel-in-progress: false
+  actions: write
 
 jobs:
-  update:
+  boucle:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WORKFLOW: update.yml
+      # Secret facultatif : sans lui, les actualités sont affichées sans résumé ni impact estimé
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
     steps:
+      - name: Une boucle tourne-t-elle déjà ?
+        id: garde
+        run: |
+          autres=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW" --status in_progress \
+                     --json databaseId --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)] | length")
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "${autres:-0}" -gt 0 ]; then
+            echo "Une boucle est déjà en cours : rien à faire."
+            echo "lancer=non" >> "$GITHUB_OUTPUT"
+          else
+            echo "lancer=oui" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.garde.outputs.lancer == 'oui'
 
       - uses: actions/setup-python@v6
+        if: steps.garde.outputs.lancer == 'oui'
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Installer les dépendances
+        if: steps.garde.outputs.lancer == 'oui'
         run: pip install -r requirements.txt
 
-      - name: Télécharger les cours des ETF
-        run: python scripts/update_data.py
+      - name: Boucle de mise à jour
+        id: boucle
+        if: steps.garde.outputs.lancer == 'oui'
+        run: bash scripts/boucle.sh
 
-      - name: Market Thermometer (indicateurs et score)
-        run: python scripts/update_market.py
-        continue-on-error: true
-
-      - name: Market News
-        run: python scripts/update_news.py
-        continue-on-error: true
-        env:
-          # Secret facultatif : sans lui, les actualités sont affichées sans résumé ni impact estimé
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
-
-      - name: Enregistrer les données dans le dépôt
+      - name: Passer le relais à une nouvelle exécution
+        if: steps.garde.outputs.lancer == 'oui' && steps.boucle.outputs.relais == 'oui'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data
-          if git diff --cached --quiet; then
-            echo "Pas de nouvelle donnée"
-          else
-            git commit -m "Données du $(date -u +'%Y-%m-%d %H:%M') UTC"
-            git pull --rebase --autostash
-            git push
-          fi
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: .
-
-      - id: deploy
-        uses: actions/deploy-pages@v4
+          for essai in 1 2 3; do
+            gh workflow run "$WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref main && exit 0
+            sleep 20
+          done
+          echo "Relais impossible : le cron relancera la boucle."

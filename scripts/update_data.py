@@ -183,6 +183,13 @@ def main():
         meta["etfs"][etf["id"]] = status
         print(f"{etf['id']:6s} {status}")
 
+    # un ETF retiré de etfs.json ne laisse pas de fichier d'historique derrière lui
+    known = {etf["id"] for etf in etfs}
+    for old_file in HIST.glob("*.json"):
+        if etfs and old_file.stem not in known:
+            old_file.unlink()
+            print(f"Historique supprimé : {old_file.name}")
+
     write_json(DATA / "intraday.json", intraday)
     write_json(DATA / "meta.json", meta)
     print(f"{ok_count}/{len(etfs)} ETF mis à jour")

@@ -390,3 +390,39 @@ footer p { margin: 4px 0; }
   .tabs .long { display: none; }
   .tabs .short { display: inline; }
 }
+
+/* ------------------------------------------------------------------ fraîcheur des données (barre du haut) */
+.fresh { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); white-space: nowrap; cursor: default; }
+.fresh i { width: 8px; height: 8px; border-radius: 50%; background: var(--st-neutral); flex: none; }
+.fresh.ok i { background: var(--st-good); }
+.fresh.late { color: var(--ink); font-weight: 600; }
+.fresh.late i { background: var(--st-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-warning) 30%, transparent); }
+
+/* ------------------------------------------------------------------ simulateur d'investissement programmé */
+.dca-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 20px; flex-wrap: wrap; }
+.dca-head h2 { margin-bottom: 2px; }
+.dca-head p { margin: 0; }
+.dca-controls { display: flex; align-items: flex-end; gap: 10px 14px; flex-wrap: wrap; }
+.dca-amount { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--muted); }
+.dca-amount span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 0.95rem; font-weight: 600; }
+.dca-amount input {
+  width: 96px; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; text-align: right;
+}
+.dca-amount input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dca-card .small-chart { height: 280px; }
+#dca-note { margin: 8px 2px 0; }
+
+/* ------------------------------------------------------------------ évolution du score */
+.score-card { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.score-card h3 { margin: 0; font-size: 1rem; }
+.score-card p { margin: 0; }
+.score-delta b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  #updated { display: inline-flex; font-size: 0.75rem; }
+  #updated .lbl { display: none; }
+  .dca-controls { width: 100%; justify-content: space-between; }
+  .dca-card .small-chart { height: 240px; }
+  .score-delta { width: 100%; }
+}

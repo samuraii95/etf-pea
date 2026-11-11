@@ -8,6 +8,13 @@
   <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230ca30c'/%3E%3Cpath d='M6 22l6-7 5 4 9-11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <!-- Adresse des données publiées par le robot (branche « data » du dépôt GitHub) -->
+  <meta name="data-remote" content="https://raw.githubusercontent.com/samuraii95/etf-pea/data/">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mes ETF">
   <link rel="stylesheet" href="assets/style.css">
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js" defer></script>
   <script type="module" src="assets/app.js"></script>
@@ -24,7 +31,7 @@
       <button role="tab" data-tab="thermo" aria-selected="false"><span class="long">Market Thermometer</span><span class="short">Thermomètre</span></button>
     </nav>
     <div class="topbar-right">
-      <span id="updated" class="muted small"></span>
+      <span id="updated" class="fresh small"></span>
       <button id="theme-btn" class="icon-btn" title="Changer de thème" aria-label="Changer de thème">◐</button>
     </div>
   </header>
@@ -86,6 +93,24 @@
           </div>
         </div>
 
+        <div class="card dca-card">
+          <div class="dca-head">
+            <div>
+              <h2>Et si j'avais investi chaque mois ?</h2>
+              <p class="muted small">Simulateur d'investissement programmé sur cet ETF.</p>
+            </div>
+            <div class="dca-controls">
+              <label class="dca-amount">Versement mensuel
+                <span><input type="number" id="dca-amount" min="1" max="1000000" step="10" value="100" inputmode="numeric"> €</span>
+              </label>
+              <div class="seg" id="dca-range" role="group" aria-label="Durée de la simulation"></div>
+            </div>
+          </div>
+          <div class="window-stats" id="dca-stats"></div>
+          <div id="dca-chart" class="chart small-chart"></div>
+          <p class="muted small" id="dca-note"></p>
+        </div>
+
         <div class="two-col">
           <div class="card">
             <h2>Performances annuelles</h2>
@@ -143,6 +168,7 @@
 
       <div id="th-alert"></div>
       <div class="gauges" id="th-gauges"></div>
+      <div id="th-history"></div>
 
       <h2 class="section-title">Les 4 indicateurs</h2>
       <div class="ind-grid" id="th-indicators"></div>
@@ -162,7 +188,7 @@
   </main>
 
   <footer>
-    <p><b>Sources :</b> Boursorama (cours Euronext Paris) et Yahoo Finance (cotations Xetra, secours). Cours de clôture quotidiens, données intraday différées, mises à jour automatiquement toutes les 30 min en séance.</p>
+    <p><b>Sources :</b> Boursorama (cours Euronext Paris) et Yahoo Finance (cotations Xetra, secours). Cours de clôture quotidiens, données intraday différées, mises à jour automatiquement toutes les 15 min en séance (9 h – 22 h 20, heure de Paris).</p>
     <p><b>Market Thermometer :</b> NY Fed, U.S. Treasury, CBOE, contrats à terme Fed Funds (CBOT) et Brent (ICE), indices via Yahoo Finance (cours différés). Actualités : flux RSS publics de la Fed, du BEA, de CNBC, MarketWatch et Investing.com.</p>
     <p>L'éligibilité PEA indiquée a été vérifiée en novembre 2026 (justETF, Boursorama) ; elle peut évoluer, vérifie-la auprès de ton courtier. Les performances passées ne préjugent pas des performances futures. Les classements ne sont pas un conseil en investissement.</p>
     <p id="data-status" class="muted small"></p>

@@ -28,10 +28,43 @@ export function alpha(hex, a) {
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+// ------------------------------------------------------------------ données
+// Le robot publie les données sur la branche « data » du dépôt (adresse dans la balise <meta name="data-remote">).
+// En ligne, on lit cette branche (toujours la plus fraîche) et on garde la copie livrée avec le site en secours.
+// En local (localhost), c'est l'inverse : d'abord les fichiers du dossier data/.
+const REMOTE = document.querySelector('meta[name="data-remote"]')?.content || "";
+const LOCAL_FIRST = ["localhost", "127.0.0.1", ""].includes(location.hostname);
+const bust = () => `?v=${Math.floor(Date.now() / 60000)}`;
+let basePromise = null;
+
+async function pickBase() {
+  const order = !REMOTE ? ["data/"] : LOCAL_FIRST ? ["data/", REMOTE] : [REMOTE, "data/"];
+  for (const base of order) {
+    try {
+      const r = await fetch(base + "meta.json" + bust(), { cache: "no-cache" });
+      if (r.ok) return base;
+    } catch { /* source injoignable : on essaie la suivante */ }
+  }
+  return "data/";
+}
+
+// url = "data/xxx.json" ; la source est choisie une fois par chargement (resetDataSource pour la rechoisir)
 export async function getJSON(url) {
-  const r = await fetch(`${url}?v=${Math.floor(Date.now() / 60000)}`, { cache: "no-cache" });
+  const base = await (basePromise ||= pickBase());
+  const r = await fetch(base + url.replace(/^data\//, "") + bust(), { cache: "no-cache" });
   if (!r.ok) throw new Error(`${url} : ${r.status}`);
   return r.json();
+}
+
+export function resetDataSource() { basePromise = null; }
+
+// "il y a 12 min", "il y a 3 h", "il y a 2 j"
+export function ago(date) {
+  const min = Math.max(0, Math.round((Date.now() - new Date(date).getTime()) / 60000));
+  if (min < 1) return "à l'instant";
+  if (min < 60) return `il y a ${min}${NBSP}min`;
+  if (min < 48 * 60) return `il y a ${Math.round(min / 60)}${NBSP}h`;
+  return `il y a ${Math.round(min / 1440)}${NBSP}j`;
 }
 
 export function tooltipBase() {

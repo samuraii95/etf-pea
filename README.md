@@ -2,11 +2,11 @@
 
 Site perso qui trace les cours de mes ETF depuis leur création, avec :
 
-- **Suivi** : courbe par ETF (1J, 1S, 1M, 3M, 6M, 1A, 3A, 5A, Max), curseur de fenêtre pour zoomer, échelle log, stats court terme et long terme (perfs, volatilité, baisse max., moyennes mobiles, meilleures/pires années…), performances annuelles et fiche du fonds.
+- **Suivi** : courbe par ETF (1J, 1S, 1M, 3M, 6M, 1A, 3A, 5A, Max), curseur de fenêtre pour zoomer, échelle log, stats court terme et long terme (perfs, volatilité, baisse max., moyennes mobiles, meilleures/pires années…), simulateur d'investissement programmé (« et si j'avais investi X € chaque mois ? »), performances annuelles et fiche du fonds. Chaque ETF a son lien direct (`#suivi/WPEA`).
 - **Comparer & Top 10** : toutes les courbes sur le même graphique (base 0 % au début de la fenêtre), Top 10 sur 1 mois, 1 an, 3 ans et Max, tableau complet triable.
-- **Market Thermometer** : score de 0 à 100 sur le contexte des marchés américains (un pour le Nasdaq 100, un pour le S&P 500), calculé à partir de 4 indicateurs (Fed et taux, VIX, Brent, tendance), avec la méthode affichée sur la page, et un flux d'actualités filtrable.
+- **Market Thermometer** : score de 0 à 100 sur le contexte des marchés américains (un pour le Nasdaq 100, un pour le S&P 500), calculé à partir de 4 indicateurs (Fed et taux, VIX, Brent, tendance), avec la méthode affichée sur la page, l'évolution du score séance après séance, et un flux d'actualités filtrable.
 
-Les données sont mises à jour automatiquement par GitHub (toutes les 30 min de l'ouverture de Paris à la clôture de Wall Street). Rien ne tourne sur ton PC.
+Les données sont mises à jour automatiquement par GitHub : toutes les 15 minutes de 8 h 55 à 22 h 20 (heure de Paris) en semaine, toutes les heures le reste du temps. Rien ne tourne sur ton PC. La pastille en haut du site indique l'âge des données et passe en « Données en retard » si le robot s'est arrêté.
 
 ## Les ETF suivis
 
@@ -21,7 +21,7 @@ Les données sont mises à jour automatiquement par GitHub (toutes les 30 min de
 | IUSQ | iShares MSCI ACWI | IE00B6R52259 | **non** |
 | GPEA | Amundi PEA Global (MSCI ACWI) | FR0014017NX3 | oui |
 | WPEA | iShares MSCI World Swap PEA | IE0002XZSHO1 | oui |
-| MEUD | Amundi Core Stoxx Europe 600 | LU0908500753 | **non** |
+| ETZ | BNP Paribas Easy STOXX Europe 600 | FR0011550193 | oui |
 | UST | Amundi Core Nasdaq-100 Swap | LU1829221024 | **non** |
 | PUST | Amundi PEA Nasdaq-100 | FR0011871110 | oui |
 | PTPXE | Amundi PEA Japon (TOPIX) | FR0013411980 | oui |
@@ -41,10 +41,19 @@ Les données sont mises à jour automatiquement par GitHub (toutes les 30 min de
    git push -u origin main
    ```
 4. Dans le dépôt : **Settings → Pages → Build and deployment → Source : GitHub Actions**.
-5. Onglet **Actions → Mise à jour des cours → Run workflow** pour la première mise en ligne.
-6. Le site est alors sur `https://TON-PSEUDO.github.io/etf-pea/`. Ajoute-le à l'écran d'accueil de ton téléphone.
+5. Dans `index.html`, mets ton pseudo dans la balise `<meta name="data-remote" …>`.
+6. Le site est alors sur `https://TON-PSEUDO.github.io/etf-pea/`. Ajoute-le à l'écran d'accueil de ton téléphone : il s'ouvre comme une application, avec son icône.
 
-Si un jour GitHub met en pause la tâche planifiée (après 60 jours sans activité sur le dépôt), il suffit de la réactiver dans l'onglet Actions.
+## Comment tournent les mises à jour
+
+Deux robots GitHub Actions :
+
+- **Mise à jour des données** (`.github/workflows/update.yml` + `scripts/boucle.sh`). Les déclenchements planifiés de GitHub sont très irréguliers (1 à 3 passages par jour constatés au lieu de 30). Le robot tourne donc en boucle : une fois lancé, il met à jour les données toutes les 15 minutes en séance et se relance lui-même avant la limite de 6 heures d'une tâche. Le cron ne sert plus que de filet de sécurité pour relancer la boucle si elle s'arrête.
+- **Mise en ligne du site** (`.github/workflows/deploy.yml`) : à chaque modification du code, et une fois par jour pour la copie de secours des données.
+
+Les données ne sont plus enregistrées dans `main` : le robot les publie sur la branche **`data`** (un seul commit, remplacé à chaque passage), que le site lit directement. La branche `main` ne contient que le code, donc plus besoin de `git pull` avant d'envoyer une modification. Si la branche `data` est injoignable, le site utilise la copie livrée avec la page.
+
+Pour arrêter les mises à jour : onglet **Actions → Mise à jour des données → ⋯ → Disable workflow**, puis annule l'exécution en cours.
 
 ## Market Thermometer
 
@@ -80,7 +89,7 @@ Modèle utilisé par défaut : `claude-opus-5-5`, avec un effort de réflexion r
 
 ## Ajouter ou retirer un ETF
 
-Modifie `data/etfs.json` (copie un bloc existant et change les champs), puis envoie la modif sur GitHub. Le robot télécharge tout l'historique du nouvel ETF au passage suivant.
+Modifie `data/etfs.json` (copie un bloc existant et change les champs), puis envoie la modif sur GitHub. Le robot télécharge tout l'historique du nouvel ETF au passage suivant et supprime celui des ETF retirés.
 
 - `sources.boursorama` : `1rT` + ticker pour Euronext Paris (ex. `1rTWPEA`)
 - `sources.yahoo` : ticker Yahoo Finance (ex. `WPEA.PA` pour Paris, `IUSQ.DE` pour Xetra)
@@ -97,7 +106,7 @@ py scripts/update_news.py
 py scripts/serve.py
 ```
 
-Puis ouvre <http://localhost:8765>.
+Puis ouvre <http://localhost:8765>. En local, le site lit d'abord les fichiers du dossier `data/` (non versionnés), puis la branche `data` s'ils manquent.
 
 ## Sources des données
 

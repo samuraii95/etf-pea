@@ -1,0 +1,47 @@
+name: Mise en ligne du site
+
+# Publie le site sur GitHub Pages à chaque modification du code, et une fois par jour à la demande
+# du robot de mise à jour pour que la copie de secours des données reste récente.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ajouter les dernières données (copie de secours)
+        run: |
+          if git fetch -q --depth=1 origin data; then
+            mkdir -p data && git archive FETCH_HEAD | tar -x -C data
+          else
+            echo "Pas encore de branche data"
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

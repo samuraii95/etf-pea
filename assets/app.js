@@ -1,6 +1,6 @@
 import * as S from "./stats.js";
 import { $, nf, NBSP, euro, pct, cls, arrow, esc, dfDay, dfDayShort, dfMonth, dfYear, dfTime, dfDayTime, dfFull,
-  dfWeekday, fmtDay, parisDay, css, alpha, getJSON, tooltipBase } from "./ui.js";
+  dfWeekday, fmtDay, parisDay, css, alpha, getJSON, resetDataSource, ago, tooltipBase } from "./ui.js";
 import { renderThermo, refreshThermo } from "./thermo.js";
 
 // ------------------------------------------------------------------ réglages
@@ -10,7 +10,8 @@ const LABEL = { "1J": "1J", "1S": "1S", "1M": "1M", "3M": "3M", "6M": "6M", YTD:
 const TOP_PERIODS = [["1M", "1 mois"], ["1A", "1 an"], ["3A", "3 ans"], ["MAX", "Max"]];
 const DEFAULT_CMP = ["WPEA", "ESE", "PUST", "PAASI", "PTPXE", "ESIT", "BNK", "HLT"];
 const MAX_COLORED = 8;
-const REFRESH_MS = 10 * 60 * 1000;
+const REFRESH_MS = 5 * 60 * 1000;
+const DCA_RANGES = ["1A", "3A", "5A", "10A", "MAX"];
 const TOUCH = matchMedia("(pointer: coarse)").matches;
 
 const state = {
@@ -21,6 +22,7 @@ const state = {
   log: false,
   peaOnly: localStorage.getItem("peaOnly") === "1",
   sort: localStorage.getItem("sort") || "day",
+  dca: { amount: +localStorage.getItem("dcaAmount") || 100, range: localStorage.getItem("dcaRange") || "5A" },
   cmp: {
     range: localStorage.getItem("cmpRange") || "1A",
     selected: JSON.parse(localStorage.getItem("cmpSelected") || "null") || DEFAULT_CMP,
@@ -32,7 +34,7 @@ const state = {
   },
 };
 
-let mainChart = null, yearChart = null, cmpChart = null;
+let mainChart = null, yearChart = null, cmpChart = null, dcaChart = null;
 let view = null;        // ce qui est affiché dans le graphique principal
 let cmpView = null;     // idem pour la comparaison
 let cmpRaf = 0;
@@ -93,7 +95,7 @@ function showTab(tab) {
   $("#tab-suivi").hidden = tab !== "suivi";
   $("#tab-comparer").hidden = tab !== "comparer";
   $("#tab-thermo").hidden = tab !== "thermo";
-  if (location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
+  syncHash();
   if (tab === "suivi") renderSuivi();
   else if (tab === "comparer") renderComparer();
   else renderThermo();
@@ -110,13 +112,26 @@ function toggleTheme() {
 }
 
 function rerenderCharts() {
-  if (state.tab === "suivi") { renderMainChart(true); renderYears(); }
+  if (state.tab === "suivi") { renderMainChart(true); renderYears(); renderDca(); }
   else if (state.tab === "comparer") { renderCmpChart(true); renderTop(); }
   else renderThermo();
 }
 
+// Adresse de la page : #suivi/WPEA, #comparer ou #thermo (un lien ouvre directement le bon ETF)
+function readHash() {
+  const [tab, id] = location.hash.slice(1).split("/");
+  return { tab: ["comparer", "thermo"].includes(tab) ? tab : "suivi", id };
+}
+
+function syncHash() {
+  const hash = state.tab === "suivi" ? `#suivi/${state.selected}` : "#" + state.tab;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+}
+
 function tabFromHash() {
-  return { "#comparer": "comparer", "#thermo": "thermo" }[location.hash] || "suivi";
+  const { tab, id } = readHash();
+  if (tab === "suivi" && state.byId[id]) state.selected = id;
+  return tab;
 }
 
 // ------------------------------------------------------------------ onglet Suivi
@@ -126,6 +141,7 @@ function renderSuivi() {
   renderRangeButtons();
   renderMainChart(false);
   renderStats();
+  renderDca();
   renderYears();
   renderFund();
 }
@@ -156,6 +172,7 @@ function selectEtf(id) {
   state.selected = id;
   localStorage.setItem("etf", id);
   if (state.tab !== "suivi") return showTab("suivi");
+  syncHash();
   renderSuivi();
 }
 
@@ -419,6 +436,64 @@ function renderStats() {
     tile("Meilleure séance", pct(bw.bestR), fmtDay(s.t[bw.best]), "up"),
     tile("Pire séance", pct(bw.worstR), fmtDay(s.t[bw.worst]), "down"),
   ].join("");
+}
+
+// Simulateur : et si j'avais investi X euros chaque mois dans cet ETF ?
+function renderDca() {
+  const s = state.series[state.selected];
+  if (!window.echarts || !s) return;
+  const eur0 = x => nf(0).format(x) + NBSP + "€";
+  const available = k => k === "MAX" || S.periodStartIdx(s, k) !== null;
+  if (!available(state.dca.range)) state.dca.range = "MAX";
+  $("#dca-range").innerHTML = DCA_RANGES.map(k =>
+    `<button data-range="${k}" aria-pressed="${k === state.dca.range}" ${available(k) ? "" : `disabled title="Historique trop court"`}>${k === "MAX" ? "Max" : k}</button>`).join("");
+  if (document.activeElement !== $("#dca-amount")) $("#dca-amount").value = state.dca.amount;
+
+  const a = S.periodStartIdx(s, state.dca.range) ?? 0;
+  const r = S.dca(s, state.dca.amount, a);
+  const ratio = r.gain / r.invested;
+  const ws = (label, value, klass = "", big = false) => `<div class="ws ${big ? "big" : ""}"><b class="${klass}">${value}</b><span>${label}</span></div>`;
+  $("#dca-stats").innerHTML =
+    ws("valeur aujourd'hui", eur0(r.value), "", true)
+    + ws(`versé en ${r.n} mensualités`, eur0(r.invested))
+    + ws("plus ou moins-value", `${r.gain >= 0 ? "+" : "−"}${eur0(Math.abs(r.gain))} (${pct(ratio, 1)})`, cls(r.gain))
+    + (r.irr != null ? ws("rendement annualisé des versements", pct(r.irr, 1), cls(r.irr)) : "");
+  $("#dca-note").textContent = `Simulation sur les cours passés : ${nf(0).format(state.dca.amount)} € investis au premier cours de chaque mois depuis le ${fmtDay(s.t[a])}, sans frais de courtage ni fiscalité. Les performances passées ne préjugent pas des performances futures.`;
+
+  dcaChart ||= echarts.init($("#dca-chart"));
+  const value = css("--s1"), paid = css("--ink-2");
+  dcaChart.setOption({
+    animation: false,
+    grid: { left: 8, right: 8, top: 30, bottom: 4, containLabel: true },
+    legend: { top: 0, left: 0, itemWidth: 14, itemHeight: 3, icon: "rect", textStyle: { color: css("--ink-2"), fontSize: 12 } },
+    xAxis: {
+      type: "time", axisLine: { lineStyle: { color: css("--axis") } }, axisTick: { show: false },
+      axisLabel: { color: css("--muted"), hideOverlap: true, formatter: v => (s.t.at(-1) - s.t[a] > 800 * S.DAY ? dfYear.format(v) : dfMonth.format(v)) },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: "value", position: "right", splitLine: { lineStyle: { color: css("--grid") } },
+      axisLabel: { color: css("--muted"), formatter: v => nf(0).format(v) + " €" },
+    },
+    tooltip: {
+      ...tooltipBase(),
+      formatter: ps => {
+        const [t, inv, val] = r.points[ps[0].dataIndex];
+        const g = val - inv;
+        return `<div class="tt"><div class="tt-date">${fmtDay(t)}</div>
+          <div class="tt-row"><i style="background:${value}"></i><b>${eur0(val)}</b><span>Valeur</span></div>
+          <div class="tt-row"><i style="background:${paid}"></i><b>${eur0(inv)}</b><span>Versé</span></div>
+          <div class="${cls(g)}">${g >= 0 ? "+" : "−"}${eur0(Math.abs(g))} (${pct(g / inv, 1)})</div></div>`;
+      },
+    },
+    series: [
+      { name: "Valeur du portefeuille", type: "line", data: r.points.map(p => [p[0], p[2]]), showSymbol: false, symbolSize: 7,
+        lineStyle: { width: 2, color: value }, itemStyle: { color: value },
+        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: alpha(value, 0.2) }, { offset: 1, color: alpha(value, 0.01) }]) } },
+      { name: "Total versé", type: "line", step: "end", data: r.points.map(p => [p[0], p[1]]), showSymbol: false, symbolSize: 7,
+        lineStyle: { width: 1.5, color: paid, type: "dashed" }, itemStyle: { color: paid } },
+    ],
+  }, true);
 }
 
 function renderYears() {
@@ -702,6 +777,21 @@ function bindEvents() {
   $("#log-scale").addEventListener("change", ev => { state.log = ev.target.checked; renderMainChart(true); });
   $("#reset-zoom").addEventListener("click", () => renderMainChart(false));
 
+  $("#dca-range").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-range]");
+    if (!b || b.disabled) return;
+    state.dca.range = b.dataset.range;
+    localStorage.setItem("dcaRange", state.dca.range);
+    renderDca();
+  });
+  $("#dca-amount").addEventListener("input", ev => {
+    const v = Math.round(+ev.target.value);
+    if (!(v >= 1 && v <= 1e6)) return; // saisie en cours ou valeur absurde : on garde le montant précédent
+    state.dca.amount = v;
+    localStorage.setItem("dcaAmount", v);
+    renderDca();
+  });
+
   $("#cmp-range-buttons").addEventListener("click", ev => {
     const b = ev.target.closest("button[data-range]");
     if (!b) return;
@@ -752,7 +842,7 @@ function bindEvents() {
   const ro = new ResizeObserver(entries => {
     for (const en of entries) if (en.contentRect.width > 0) echarts.getInstanceByDom(en.target)?.resize();
   });
-  ["#main-chart", "#year-chart", "#cmp-chart"].forEach(sel => ro.observe($(sel)));
+  ["#main-chart", "#year-chart", "#cmp-chart", "#dca-chart"].forEach(sel => ro.observe($(sel)));
   window.addEventListener("hashchange", () => showTab(tabFromHash()));
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
@@ -762,6 +852,7 @@ let lastRefresh = 0;
 async function refresh() {
   if (Date.now() - lastRefresh < 60_000) return;
   lastRefresh = Date.now();
+  resetDataSource();
   if (state.tab === "thermo") refreshThermo();
   const before = state.meta?.updated;
   try {
@@ -770,7 +861,7 @@ async function refresh() {
     await loadData();
     renderStatus();
     if (state.tab === "suivi") {
-      renderList(); renderHead(); renderRangeButtons(); renderMainChart(true); renderStats(); renderYears(); renderFund();
+      renderList(); renderHead(); renderRangeButtons(); renderMainChart(true); renderStats(); renderDca(); renderYears(); renderFund();
     } else if (state.tab === "comparer") {
       renderChips(); renderCmpChart(true); renderTop(); renderTable();
     }
@@ -781,7 +872,14 @@ async function refresh() {
 
 function renderStatus() {
   const m = state.meta;
-  if (m?.updated) $("#updated").textContent = `Mis à jour le ${dfFull.format(new Date(m.updated))}`;
+  if (m?.updated) {
+    // le robot passe toutes les 15 min en séance et toutes les heures sinon : au-delà, quelque chose coince
+    const late = Date.now() - Date.parse(m.updated) > 100 * 60000;
+    const el = $("#updated");
+    el.className = `fresh small ${late ? "late" : "ok"}`;
+    el.innerHTML = `<i aria-hidden="true"></i><span class="lbl">${late ? "Données en retard · " : "Données à jour · "}</span>${ago(m.updated)}`;
+    el.title = `Dernière mise à jour : ${dfFull.format(new Date(m.updated))} (heure de Paris)`;
+  }
   const errors = Object.entries(m?.etfs || {}).filter(([, v]) => v.error).map(([k]) => k);
   $("#data-status").textContent = errors.length
     ? `Dernière mise à jour incomplète pour : ${errors.join(", ")} (les cours précédents sont conservés).`
@@ -805,6 +903,7 @@ async function start() {
   renderStatus();
   showTab(tabFromHash());
   setInterval(refresh, REFRESH_MS);
+  setInterval(renderStatus, 60_000); // "il y a 12 min" reste exact sans recharger
 }
 
 start();

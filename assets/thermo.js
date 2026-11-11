@@ -1,6 +1,6 @@
 // Onglet Market Thermometer : score 0-100 (Nasdaq 100 / S&P 500), 4 indicateurs, méthode et actualités.
 // Les données viennent de data/market.json et data/news.json (scripts/update_market.py et update_news.py).
-import { $, nf, NBSP, pct, cls, esc, dfDay, dfMonth, dfFull, dfDayTime, css, alpha, getJSON, tooltipBase } from "./ui.js";
+import { $, nf, NBSP, pct, cls, esc, dfDay, dfDayShort, dfMonth, dfFull, dfDayTime, css, alpha, getJSON, tooltipBase } from "./ui.js";
 
 const PILLARS = { trend: "Tendance", fed: "Politique monétaire", vix: "Volatilité (VIX)", oil: "Pétrole (Brent)" };
 const INDEX_NAMES = { NDX: "Nasdaq 100", SPX: "S&P 500" };
@@ -19,7 +19,7 @@ const IMPACT = {
   neutre: { label: "Impact neutre", icon: "●", st: "neutral" },
 };
 
-let market = null, news = null, loadedAt = 0;
+let market = null, news = null, scoreHistory = null, loadedAt = 0;
 let newsFilter = "all", trendIdx = "NDX";
 const charts = {};
 let ro = null;
@@ -112,9 +112,10 @@ function lineChart(id, seriesList, { unit = "", decimals = 2, marks = [] } = {})
 
 // ------------------------------------------------------------------ chargement
 async function load() {
-  const [m, n] = await Promise.allSettled([getJSON("data/market.json"), getJSON("data/news.json")]);
+  const [m, n, h] = await Promise.allSettled([getJSON("data/market.json"), getJSON("data/news.json"), getJSON("data/market_history.json")]);
   market = m.status === "fulfilled" ? m.value : null;
   news = n.status === "fulfilled" ? n.value : null;
+  scoreHistory = h.status === "fulfilled" ? h.value.days || [] : [];
   loadedAt = Date.now();
 }
 
@@ -133,8 +134,10 @@ function render() {
   if (!market) {
     $("#th-gauges").innerHTML = `<div class="card"><h3>Indicateurs indisponibles</h3><p class="muted">Le fichier data/market.json n'a pas pu être chargé. Aucun score n'est affiché plutôt qu'un score inventé.</p></div>`;
     $("#th-indicators").innerHTML = "";
+    $("#th-history").innerHTML = "";
   } else {
     renderGauges();
+    renderScoreHistory();
     renderIndicators();
     renderMethod();
   }
@@ -209,6 +212,58 @@ function renderGauges() {
       }],
     }, true);
   }
+}
+
+// ------------------------------------------------------------------ évolution du score
+function renderScoreHistory() {
+  const days = (scoreHistory || []).filter(r => r.NDX != null || r.SPX != null);
+  const box = $("#th-history");
+  if (days.length < 2) {
+    box.innerHTML = `<div class="card score-card"><h3>Évolution du score</h3>
+      <p class="muted small">L'historique se construit séance après séance : la courbe apparaîtra dès le deuxième jour de données.</p></div>`;
+    return;
+  }
+  const first = days[0], last = days.at(-1);
+  const delta = k => (first[k] != null && last[k] != null ? last[k] - first[k] : null);
+  const change = k => {
+    const d = delta(k);
+    if (d == null) return "";
+    return `<span>${INDEX_NAMES[k]} : <b>${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)} pt${Math.abs(d) > 1 ? "s" : ""}</b></span>`;
+  };
+  box.innerHTML = `<div class="card score-card">
+    <div class="ind-head"><h3>Évolution du score</h3>
+      <span class="muted small score-delta">Depuis le ${dateOf(first.d)} · ${change("NDX")} · ${change("SPX")}</span></div>
+    <div class="mini-chart tall" id="ch-score" role="img" aria-label="Évolution du score Market Thermometer pour le Nasdaq 100 et le S&P 500"></div>
+    <p class="src">Un point par séance américaine (dernier score complet calculé ce jour-là), depuis la mise en ligne du Thermometer. Les bandes de couleur rappellent l'échelle : très défavorable, défavorable, neutre, favorable.</p>
+  </div>`;
+
+  const c = chartIn("ch-score");
+  const ts = d => Date.parse(d + "T00:00:00Z");
+  const zone = (from, to, key) => [{ yAxis: from, itemStyle: { color: alpha(st(key), 0.09) } }, { yAxis: to }];
+  const serie = (key, color, extra = {}) => ({
+    type: "line", name: INDEX_NAMES[key], data: days.map(r => r[key]), connectNulls: true,
+    showSymbol: days.length <= 60, symbolSize: 7, lineStyle: { width: 2, color }, itemStyle: { color, borderColor: css("--surface"), borderWidth: 2 }, ...extra,
+  });
+  c.setOption({
+    animation: false,
+    grid: { left: 22, right: 40, top: 28, bottom: 22 },
+    legend: { top: 0, left: 0, itemWidth: 14, itemHeight: 3, icon: "rect", textStyle: { color: css("--ink-2"), fontSize: 11 } },
+    // une case par séance : pas de trou le week-end, et chaque point tombe sous sa date
+    xAxis: { type: "category", data: days.map(r => r.d), boundaryGap: false, ...axisCommon(), axisLabel: { ...axisCommon().axisLabel, formatter: v => dfDayShort.format(ts(v)) } },
+    yAxis: {
+      type: "value", min: 0, max: 100, interval: 20, position: "right", axisLine: { show: false }, axisTick: { show: false },
+      splitLine: { lineStyle: { color: css("--grid") } }, axisLabel: { color: css("--muted"), fontSize: 10 },
+    },
+    tooltip: {
+      ...tooltipBase(),
+      formatter: ps => `<div class="tt"><div class="tt-date">${dateOf(ps[0].axisValue)}</div>${ps.filter(q => q.value != null).map(q =>
+        `<div class="tt-row"><i style="background:${q.color}"></i><b>${q.value}/100</b><span>${esc(q.seriesName)} · ${band(q.value).label}</span></div>`).join("")}</div>`,
+    },
+    series: [
+      serie("NDX", css("--s1"), { markArea: { silent: true, data: [zone(0, 25, "critical"), zone(25, 45, "serious"), zone(45, 60, "warning"), zone(60, 100, "good")] } }),
+      serie("SPX", css("--s2")),
+    ],
+  }, true);
 }
 
 // ------------------------------------------------------------------ cartes indicateurs

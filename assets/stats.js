@@ -13,6 +13,7 @@ export const PERIODS = {
   "1A": { label: "1 an", y: 1 },
   "3A": { label: "3 ans", y: 3 },
   "5A": { label: "5 ans", y: 5 },
+  "10A": { label: "10 ans", y: 10 },
   "MAX": { label: "depuis la création" },
 };
 
@@ -193,4 +194,36 @@ export function positiveMonths(s) {
   let up = 0, n = 0;
   for (let i = 1; i < ends.length; i++) { n++; if (ends[i] > ends[i - 1]) up++; }
   return n ? { share: up / n, up, n } : null;
+}
+
+// Investissement programmé : `amount` euros investis au premier cours de chaque mois, à partir de l'indice a.
+// Renvoie la courbe [date, total versé, valeur], les totaux et le rendement annualisé des versements (TRI).
+export function dca(s, amount, a = 0) {
+  const points = [], flows = [];
+  let units = 0, invested = 0, month = "";
+  for (let i = a; i < s.c.length; i++) {
+    const m = s.dates[i].slice(0, 7);
+    if (m !== month) {
+      month = m;
+      units += amount / s.c[i];
+      invested += amount;
+      flows.push({ t: s.t[i], amount });
+    }
+    points.push([s.t[i], invested, Math.round(units * s.c[i] * 100) / 100]);
+  }
+  const tEnd = s.t[s.t.length - 1];
+  const value = units * s.c[s.c.length - 1];
+  return { points, invested, value, gain: value - invested, n: flows.length, irr: irr(flows, value, tEnd) };
+}
+
+// Taux annuel qui, appliqué à chaque versement depuis sa date, donne la valeur finale (recherche par dichotomie)
+function irr(flows, finalValue, tEnd) {
+  if (flows.length < 2 || tEnd - flows[0].t < 330 * DAY) return null; // moins d'un an : pas d'annualisation
+  const futureValue = r => flows.reduce((sum, f) => sum + f.amount * Math.pow(1 + r, (tEnd - f.t) / (365.25 * DAY)), 0);
+  let lo = -0.99, hi = 10;
+  for (let k = 0; k < 80; k++) {
+    const mid = (lo + hi) / 2;
+    if (futureValue(mid) > finalValue) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
 }

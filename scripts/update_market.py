@@ -461,6 +461,28 @@ def global_score(key, pillars):
     return {"score": val, "status": "complet", "missing": [], "label": band(val)}
 
 
+def update_score_history(out):
+    """Garde un score par séance américaine dans data/market_history.json (le dernier calculé ce jour-là).
+    Seuls les scores complets sont enregistrés : un score partiel fausserait la courbe."""
+    days = [ix["asof"] for ix in out["indices"].values()]
+    if not days:
+        return
+    path = DATA / "market_history.json"
+    try:
+        rows = {r["d"]: r for r in json.loads(path.read_text(encoding="utf-8"))["days"]}
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        rows = {}
+    row = {"d": max(days)}
+    for key in ("NDX", "SPX"):
+        sc = out["scores"].get(key, {})
+        row[key] = sc.get("score") if sc.get("status") == "complet" else None
+    if row["NDX"] is None and row["SPX"] is None and row["d"] in rows:
+        return  # on ne remplace pas un score complet par un trou
+    rows[row["d"]] = row
+    kept = [rows[d] for d in sorted(rows)][-800:]
+    path.write_text(json.dumps({"days": kept}, separators=(",", ":")), encoding="utf-8")
+
+
 # ================================================================ programme principal
 
 def main():
@@ -562,6 +584,7 @@ def main():
         print(key, out["scores"][key]["score"], out["scores"][key]["label"], {p: v.get("score") for p, v in pillars.items()})
 
     (DATA / "market.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    update_score_history(out)
     if out["errors"]:
         print("Erreurs :", out["errors"])
 
